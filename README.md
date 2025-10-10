@@ -16,10 +16,7 @@ Below is a simple diagram showing the main components and how they interact:
 ```
    [Client: Web / Mobile] 
              |
-             |  HTTP (REST)
-             v
-      [Django Backend (inua360 project)]
-             |
+   - `compliance/` — Django app for compliance rules, checks, views, and serializers
    +---------+----------+
    |                    |
  [sme app]         [Other apps / services]
@@ -38,6 +35,9 @@ The backend exposes API endpoints (see `sme/urls.py`) which are implemented in `
 These instructions assume you have Git and Python 3.11+ installed. Adjust the Python version and virtual environment tool if you prefer `venv`, `virtualenv`, or `conda`.
 
 1. Clone the repository:
+     |                    |
+     v                    v
+   [Models/Serializers]  [Rules/Checks/Serializers]
 
 ```powershell
 git clone https://github.com/kelvinmaina01/Inua360-The-Kenyan-SME-AI-Agent.git
@@ -47,28 +47,23 @@ git checkout backend
 
 2. Create and activate a virtual environment (using venv):
 
+  If present, the `compliance` app exposes endpoints and checks under `compliance/urls.py` — look there for compliance-related routes.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-If you see an execution policy error when activating the virtual environment on PowerShell, run (as Administrator):
-
+   - `compliance/models.py` — compliance rules and data models
+   - `compliance/serializers.py` — serializers for compliance responses
+   - `compliance/views.py` and `compliance/urls.py` — compliance view logic and routing
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
-
-3. Install Python dependencies:
 
 ```powershell
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
-
 4. Apply migrations and create a local superuser (development):
 
-```powershell
-python manage.py migrate
 python manage.py createsuperuser
 ```
 
