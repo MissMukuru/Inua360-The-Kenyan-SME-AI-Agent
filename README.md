@@ -1,5 +1,5 @@
 
-# 🚀 Inua360 – The SME AI Agent for Growth
+# Inua360 – The SME AI Agent for Growth
 
 **Team VunaAI – JKUAT Hackathon Submission**  
 Empowering Kenyan SMEs to find, finance, and fulfill opportunities using intelligent AI agents.
