@@ -1,3 +1,4 @@
+
 # 🚀 Inua360 – The SME AI Agent for Growth
 
 **Team VunaAI – JKUAT Hackathon Submission**  
@@ -91,5 +92,5 @@ Inua360 integrates four intelligent agents that work together to support SMEs ac
 
 This project is open-source under the MIT License. Feel free to fork, adapt, and build upon it.
 
----
+
 
