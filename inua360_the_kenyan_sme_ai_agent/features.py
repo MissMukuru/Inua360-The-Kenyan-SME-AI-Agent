@@ -1,6 +1,5 @@
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split
 from loguru import logger
 from tqdm import tqdm
 import typer
@@ -23,66 +22,51 @@ def compliance_risk(row):
 
 @app.command()
 def main(
-    input_path: Path = PROCESSED_DATA_DIR / "Sales.csv",
-    labels_path: Path = PROCESSED_DATA_DIR / "labels.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
+    input_path: Path = PROCESSED_DATA_DIR / "Clean_data.csv",
+    output_path: Path = PROCESSED_DATA_DIR / "funding_train.csv",
 ):
+    # Load data
     data = pd.read_csv(input_path)
-    logger.info(f'Loading dataset from {input_path}')
+    logger.info(f'Loaded dataset from {input_path}')
 
     data.columns = data.columns.str.strip()
 
-    logger.info("Creating new features")
+    # Create new feature: revenue per employee
+    logger.info("Creating new features...")
     data['revenue_per_employee'] = data['annual_revenue'] / data['employees']
     data['revenue_per_employee'].replace([np.inf, -np.inf], np.nan, inplace=True)
 
-    logger.info("Creating the target feature")
+    # Create compliance risk target
+    logger.info("Creating the Compliance_risk feature...")
     data['Compliance_risk'] = data.apply(compliance_risk, axis=1)
 
-    logger.info('Encoding Categorical features...')
-    categorical_cols = data.select_dtypes(include='object').columns
-    label_encoders = {}
+    # Ensure funding_status column exists (simulate if missing)
+    if 'funding_status' not in data.columns:
+        logger.warning("'funding_status' column missing — generating synthetic targets for now.")
+        data['funding_status'] = (
+            0.4 * data['annual_revenue'] +
+            0.3 * data['employees'] +
+            0.2 * data['revenue_per_employee'] +
+            np.random.normal(0, 0.05, len(data))
+        )
 
-    for col in tqdm(categorical_cols, desc='Encoding categorical Columns'):
+    # Encode categorical columns
+    logger.info("Encoding categorical features...")
+    categorical_cols = data.select_dtypes(include='object').columns
+    for col in tqdm(categorical_cols, desc='Encoding categorical columns'):
         le = LabelEncoder()
         data[col] = le.fit_transform(data[col].astype(str))
-        label_encoders[col] = le
 
-    logger.info("Standardizing the numerical features")
+    # Standardize numerical columns
+    logger.info("Scaling numerical features...")
     numerical_features = data.select_dtypes(include=['int64', 'float64']).columns
     scaler = StandardScaler()
-
     for col in tqdm(numerical_features, desc='Scaling numerical columns'):
         data[col] = scaler.fit_transform(data[[col]])
 
-    logger.info("Splitting the dataset into train and test splits")
-    X_growth = data.drop(columns=["growth_last_yr"])
-    y_growth = data["growth_last_yr"]
-
-    # Funding Model
-    X_funding = data.drop(columns=["funding_status"])
-    y_funding = data["funding_status"]
-
-    # Compliance Risk Model
-    X_risk = data.drop(columns=["Compliance_risk"])
-    y_risk = data["Compliance_risk"]
-
-    for name, X, y in [
-        ('growth', X_growth, y_growth),
-        ('funding', X_funding, y_funding),
-        ('risk', X_risk, y_risk)
-    ]:
-        logger.info(f'Creating train test split for {name} model....')
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        X_train.to_csv(output_path.parent / f"{name}_train.csv", index=False)
-        X_test.to_csv(output_path.parent / f"{name}_test.csv", index=False)
-        y_train.to_csv(output_path.parent / f"{name}_y_train.csv", index=False)
-        y_test.to_csv(output_path.parent / f"{name}_y_test.csv", index=False)
-
-        logger.success(f'{name.capitalize()} data saved to {output_path.parent}')
-
-    logger.info(f'The processed data has been saved in: {output_path.parent}')
+    # Save processed data
+    data.to_csv(output_path, index=False)
+    logger.success(f"Processed dataset saved to {output_path}")
 
 
 if __name__ == "__main__":
