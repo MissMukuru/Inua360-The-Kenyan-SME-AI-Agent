@@ -18,3 +18,4 @@ matplotlib
 joblib
 plotly
 streamlit
+xgboost
