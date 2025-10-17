@@ -22,7 +22,7 @@ def compliance_risk(row):
 
 @app.command()
 def main(
-    input_path: Path = PROCESSED_DATA_DIR / "Clean_data.csv",
+    input_path: Path = PROCESSED_DATA_DIR / "Clean_dat.csv",
     output_path: Path = PROCESSED_DATA_DIR / "funding_train.csv",
 ):
     # Load data
