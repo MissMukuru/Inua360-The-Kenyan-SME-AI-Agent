@@ -6,7 +6,7 @@ import typer
 import pandas as pd
 import numpy as np
 
-from inua360_the_kenyan_sme_ai_agent.config import PROCESSED_DATA_DIR
+from inua360_the_kenyan_sme_ai_agent.config import PROCESSED_DATA_DIR,INTERIM_DATA_DIR
 
 app = typer.Typer()
 
@@ -22,8 +22,8 @@ def compliance_risk(row):
 
 @app.command()
 def main(
-    input_path: Path = PROCESSED_DATA_DIR / "Clean_dat.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "funding_train.csv",
+    input_path: Path = PROCESSED_DATA_DIR / "Clean_data.csv",
+    output_path: Path = INTERIM_DATA_DIR / "funding_train.csv",
 ):
     # Load data
     data = pd.read_csv(input_path)
@@ -34,40 +34,9 @@ def main(
     # Create new feature: revenue per employee
     logger.info("Creating new features...")
     data['revenue_per_employee'] = data['annual_revenue'] / data['employees']
-    data['revenue_per_employee'].replace([np.inf, -np.inf], np.nan, inplace=True)
-
-    # Create compliance risk target
-    logger.info("Creating the Compliance_risk feature...")
-    data['Compliance_risk'] = data.apply(compliance_risk, axis=1)
-
-    # Ensure funding_status column exists (simulate if missing)
-    if 'funding_status' not in data.columns:
-        logger.warning("'funding_status' column missing — generating synthetic targets for now.")
-        data['funding_status'] = (
-            0.4 * data['annual_revenue'] +
-            0.3 * data['employees'] +
-            0.2 * data['revenue_per_employee'] +
-            np.random.normal(0, 0.05, len(data))
-        )
-
-    # Encode categorical columns
-    logger.info("Encoding categorical features...")
-    categorical_cols = data.select_dtypes(include='object').columns
-    for col in tqdm(categorical_cols, desc='Encoding categorical columns'):
-        le = LabelEncoder()
-        data[col] = le.fit_transform(data[col].astype(str))
-
-    # Standardize numerical columns
-    logger.info("Scaling numerical features...")
-    numerical_features = data.select_dtypes(include=['int64', 'float64']).columns
-    scaler = StandardScaler()
-    for col in tqdm(numerical_features, desc='Scaling numerical columns'):
-        data[col] = scaler.fit_transform(data[[col]])
-
-    # Save processed data
-    data.to_csv(output_path, index=False)
-    logger.success(f"Processed dataset saved to {output_path}")
+    data['revenue_per_employee'].replace([np.inf, -np.inf], np.nan)
 
 
+   
 if __name__ == "__main__":
     app()

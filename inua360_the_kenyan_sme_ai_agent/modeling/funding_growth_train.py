@@ -11,6 +11,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from loguru import logger
+import typer
 
 from inua360_the_kenyan_sme_ai_agent.config import MODELS_DIR, PROCESSED_DATA_DIR, INTERIM_DATA_DIR
 
@@ -24,7 +25,8 @@ def main(
 
 ):
     logger.info('Loading the dataset and splitting into training and test_sets')
-    data = pd.read_excel(input_path)
+    data = pd.read_csv(input_path)
+    data.columns=data.columns.str.strip()
     X = data.drop(columns=["funding_status"])
     y = data["funding_status"]
 
