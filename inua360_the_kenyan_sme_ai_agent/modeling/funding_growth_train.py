@@ -73,7 +73,7 @@ def main(
     }
 
     grid_search_rand=GridSearchCV(
-        estimator=RandomForestClassifier(random_state=42),
+        estimator=rf,
         param_grid=param_grid_rand,
         cv=3,
         n_jobs=-1,
@@ -85,7 +85,7 @@ def main(
     logger.info("Modelling the decision tree")
     param_grid_tree = {
         'criterion': ['gini', 'entropy'],
-        'max_depth': [5, 10, 20, None],
+        'max_depth': ['5, 10, 20, None'],
         'min_samples_split': [2,5, 10]
     }
     grid_search_tree=GridSearchCV(
@@ -95,8 +95,6 @@ def main(
         n_jobs=-1,
         scoring='accuracy'
     )
-    grid_search_tree.fit(Xf_train, yf_train)
-
 
     logger.info("Modelling the XGBoost Classifier")
     param_grid_xgb = {
@@ -142,8 +140,6 @@ def main(
     best_model_name=None
     best_model = None
     best_score = 0
-
-    logger.info("Evaluating all fitted models...")
 
     for name, grid in models.items():
         y_pred=grid.best_estimator_.predict(Xf_test)

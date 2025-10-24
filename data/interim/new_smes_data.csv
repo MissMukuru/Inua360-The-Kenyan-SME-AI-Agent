@@ -1,0 +1,5 @@
+company_id,country,sector,employees,annual_revenue,tech_adoption_level,main_challenges,digital_tools_used,female_owned,remote_work_policy,revenue_per_employee,Compliance_risk,funding_status
+101,Kenya,Agriculture,35,500000,2,"Access to finance","Mobile money;Accounting software",1,1,14285.7,0.2,1
+0,300000,2,"Market access","Social media;CRM",1,1,15000,0.15,0
+104,Tanzania,Technology,15,1000000,4,"Skilled labor shortage","Cloud tools;Analytics",0,1,66666.7,0.05,2102,Kenya,Manufacturing,80,2000000,3,"High costs","ERP;Inventory system",0,0,25000,0.1,2
+103,Uganda,Services,2
