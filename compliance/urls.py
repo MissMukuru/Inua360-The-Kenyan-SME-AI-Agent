@@ -8,6 +8,7 @@ app_name = "compliance"
 router = DefaultRouter()
 
 router.register(r'compliance-records', views.ComplianceCheckerViewSet)
+router.register(r'ai', views.GeminiViewSet, basename='gemini')
 
 urlpatterns = [
     path('api/', include(router.urls)),

@@ -5,3 +5,7 @@ class ComplianceCheckerSerializer(serializers.ModelSerializer):
     class Meta:
         model = ComplianceChecker
         fields = '__all__'
+
+class GeminiRequestSerializer(serializers.ModelSerializer):
+    prompt = serializers.CharField(required=False, allow_blank=False)
+    image = serializers.ImageField(required=False)
