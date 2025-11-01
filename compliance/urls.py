@@ -7,6 +7,7 @@ app_name = "compliance"
 
 router = DefaultRouter()
 
+router.register(r'documents', views.DocumentViewSet)
 router.register(r'compliance-records', views.ComplianceCheckerViewSet)
 router.register(r'ai', views.GeminiViewSet, basename='gemini')
 

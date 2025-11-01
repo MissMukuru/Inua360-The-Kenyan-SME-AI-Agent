@@ -42,6 +42,8 @@ class SMEProfile(models.Model):
     ownership_type = models.CharField(max_length=150)
     location = models.CharField(max_length=255)
     website = models.URLField(blank=True, null=True)
+    registration_number = models.CharField(max_length=100, blank=True, null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.business_name
