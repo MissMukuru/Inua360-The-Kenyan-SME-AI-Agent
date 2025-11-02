@@ -3,6 +3,7 @@ from django.db import models
 # Create your models here.
 
 TECH_ADOPTION_LEVELS = [
+    ('None', 'None'),
     ('Low', 'Low'),
     ('Medium', 'Medium'),
     ('High', 'High'),
@@ -26,7 +27,7 @@ class SMEProfile(models.Model):
     business_name = models.CharField(max_length=255)
     country = models.CharField(max_length=100)
     sector = models.CharField(max_length=150)
-    employees = models.IntegerField()
+    employees = models.PositiveIntegerField(default=0)
     annual_revenue = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
     tech_adoption_level = models.CharField(max_length=10, choices=TECH_ADOPTION_LEVELS)
     main_challenges = models.TextField()
