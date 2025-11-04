@@ -22,6 +22,64 @@ class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
 
+    def create(self, request, *args, **kwargs):
+        """
+        Upload document -> save -> analyze with Gemini -> return validation result.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = serializer.save()
+
+        try:
+            # Prepare Gemini model
+            model = genai.GenerativeModel("gemini-1.5-flash")
+
+            # Load the uploaded file (image/pdf)
+            file_path = document.file.path
+            image = Image.open(file_path)
+
+            # Generate AI feedback
+            prompt = (
+                f"Analyze this {document.get_document_type_display()} "
+                "and determine if it appears valid or authentic. "
+                "Explain your reasoning and identify potential issues."
+            )
+            response = model.generate_content([prompt, image])
+            ai_text = response.text or "No response from Gemini AI."
+
+            # Simple heuristic for 'valid'
+            valid = "valid" in ai_text.lower() and "invalid" not in ai_text.lower()
+            confidence = 0.9 if valid else 0.6
+
+            # Save validation result
+            result, _ = ValidationResult.objects.update_or_create(
+                document=document,
+                defaults={
+                    "valid": valid,
+                    "reason": ai_text,
+                    "confidence": confidence,
+                    "recommendations": {"ai_feedback": ai_text},
+                },
+            )
+
+            return Response(
+                {
+                    "document": DocumentSerializer(document).data,
+                    "validation_result": ValidationResultSerializer(result).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except Exception as e:
+            # Even if AI fails, return document info
+            return Response(
+                {
+                    "document": DocumentSerializer(document).data,
+                    "error": str(e),
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
 class GeminiViewSet(viewsets.ViewSet):
     """
     A DRF ViewSet for text and image analysis using Google Gemini API.
