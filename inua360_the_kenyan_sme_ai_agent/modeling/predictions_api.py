@@ -156,11 +156,31 @@ def predict_compliance(input: SMEInput):
     return {"compliance_prediction": prediction}
 
 @app.post("/predict/growth")
+
 def predict_growth(input: SMEInput):
     df = pd.DataFrame([input.dict()])
+
+    # Feature engineering (same as before)
     df = preprocess_growth(df)
-    prediction = growth_model.predict(df)[0]
-    return {"growth_prediction": prediction}
+
+    # Load model components
+    model_data = joblib.load(GROWTH_MODEL_PATH)
+    model = model_data["model"]
+    encoder = model_data["encoder"]
+    scaler = model_data["scaler"]
+
+    # Split columns like in training
+    categorical_cols = encoder.feature_names_in_.tolist()
+    numeric_cols = scaler.feature_names_in_.tolist()
+
+    # Encode and scale
+    X_cat = encoder.transform(df[categorical_cols])
+    X_num = scaler.transform(df[numeric_cols])
+    X_processed = np.hstack([X_cat, X_num])
+
+    # Predict
+    prediction = model.predict(X_processed)[0]
+    return {"growth_prediction": float(prediction)}
 
 # -----------------------
 # Run the server
