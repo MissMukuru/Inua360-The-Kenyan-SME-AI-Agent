@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import joblib
 from pathlib import Path
+import httpx
+import asyncio
 
 # -----------------------
 # Paths
@@ -33,6 +35,21 @@ growth_features = joblib.load(GROWTH_FEATURES_PATH)
 # FastAPI app
 # -----------------------
 app = FastAPI(title="SME AI Prediction API")
+
+# -----------------------
+# n8n webhook integration
+# -----------------------
+N8N_WEBHOOK_URL = "https://abby218.app.n8n.cloud/webhook/f71a7d4c-dff3-42e7-b081-a02fad74b56d"
+
+async def send_to_n8n(payload: dict):
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(N8N_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error sending to n8n: {e}")
+            return None
 
 # -----------------------
 # Input schema
@@ -70,71 +87,54 @@ class SMEInput(BaseModel):
 # -----------------------
 # Preprocessing functions
 # -----------------------
-def preprocess_funding(df: pd.DataFrame):
-    bool_cols = ["AML_risk_flag", "has_pitch_deck", "registered_business",
-                 "female_owned", "employee_contracts_verified"]
+def base_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
+    """Shared feature engineering for all endpoints."""
+    bool_cols = [
+        "AML_risk_flag", "has_pitch_deck", "registered_business",
+        "female_owned", "employee_contracts_verified"
+    ]
     for col in bool_cols:
         df[col] = df[col].astype(int)
 
-    # Feature engineering
     df["expense_ratio"] = (df["expenses_total"] / df["annual_revenue"]).replace([np.inf, -np.inf], 0).fillna(0)
     df["employee_efficiency"] = (df["annual_revenue"] - df["expenses_total"]) / (df["num_employees"] + 1)
-    df["financial_health_index"] = df["cash_flow_score"]*0.4 + df["credit_score"]*0.3 + df["profit_to_expense_ratio"]*0.3
-    df["compliance_score"] = df["financial_transparency_score"]*0.4 + df["bookkeeping_quality"]*0.3 + df["data_protection_score"]*0.2 + (1 - df["AML_risk_flag"])*0.1
-    df["market_resilience"] = df["traction_score"]*0.4 + df["digital_spending_ratio"]*0.3 + df["customer_retention_rate"]*0.3
+    df["financial_health_index"] = (
+        df["cash_flow_score"] * 0.4 +
+        df["credit_score"] * 0.3 +
+        df["profit_to_expense_ratio"] * 0.3
+    )
+    df["compliance_score"] = (
+        df["financial_transparency_score"] * 0.4 +
+        df["bookkeeping_quality"] * 0.3 +
+        df["data_protection_score"] * 0.2 +
+        (1 - df["AML_risk_flag"]) * 0.1
+    )
+    df["market_resilience"] = (
+        df["traction_score"] * 0.4 +
+        df["digital_spending_ratio"] * 0.3 +
+        df["customer_retention_rate"] * 0.3
+    )
 
-    # One-hot encode categorical columns
-    categorical_cols = ['tech_adoption_level', 'sector', 'country', 'region', 
-                        'prior_investment', 'tax_compliance_status', 'regulatory_license_status',
-                        'remote_work_policy']
+    categorical_cols = [
+        'tech_adoption_level', 'sector', 'country', 'region',
+        'prior_investment', 'tax_compliance_status',
+        'regulatory_license_status', 'remote_work_policy'
+    ]
     df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
+    return df
 
-    # Align with training columns
+def preprocess_funding(df: pd.DataFrame) -> pd.DataFrame:
+    df = base_preprocessing(df)
     df = df.reindex(columns=funding_features, fill_value=0)
     return df
 
-def preprocess_compliance(df: pd.DataFrame):
-    bool_cols = ["AML_risk_flag", "has_pitch_deck", "registered_business",
-                 "female_owned", "employee_contracts_verified"]
-    for col in bool_cols:
-        df[col] = df[col].astype(int)
-
-    # One-hot encode categorical columns
-    categorical_cols = ['tech_adoption_level', 'sector', 'country', 'region', 
-                        'prior_investment', 'tax_compliance_status', 'regulatory_license_status',
-                        'remote_work_policy']
-    df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
-
-    # Align with training columns
+def preprocess_compliance(df: pd.DataFrame) -> pd.DataFrame:
+    df = base_preprocessing(df)
     df = df.reindex(columns=compliance_features, fill_value=0)
     return df
 
-def preprocess_growth(df: pd.DataFrame):
-    # Boolean features
-    bool_cols = ["AML_risk_flag", "has_pitch_deck", "registered_business",
-                 "female_owned", "employee_contracts_verified"]
-    for col in bool_cols:
-        df[col] = df[col].astype(int)
-
-    # Feature engineering
-    df["expense_ratio"] = (df["expenses_total"] / df["annual_revenue"]).replace([np.inf, -np.inf], 0).fillna(0)
-    df["employee_efficiency"] = (df["annual_revenue"] - df["expenses_total"]) / (df["num_employees"] + 1)
-    df["financial_health_index"] = df["cash_flow_score"]*0.4 + df["credit_score"]*0.3 + df["profit_to_expense_ratio"]*0.3
-    df["compliance_score"] = df["financial_transparency_score"]*0.4 + df["bookkeeping_quality"]*0.3 + df["data_protection_score"]*0.2 + (1 - df["AML_risk_flag"])*0.1
-    df["market_resilience"] = df["traction_score"]*0.4 + df["digital_spending_ratio"]*0.3 + df["customer_retention_rate"]*0.3
-
-    # Add dummy target columns used during training
-    for col in ["funding_stage", "compliance_risk_level"]:
-        if col not in df.columns:
-            df[col] = 0
-
-    # One-hot encode categorical columns
-    categorical_cols = ['tech_adoption_level', 'sector', 'country', 'region', 
-                        'prior_investment', 'tax_compliance_status', 'regulatory_license_status',
-                        'remote_work_policy']
-    df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
-
-    # Reindex to match preprocessed training features
+def preprocess_growth(df: pd.DataFrame) -> pd.DataFrame:
+    df = base_preprocessing(df)
     df = df.reindex(columns=growth_features, fill_value=0)
     return df
 
@@ -142,45 +142,58 @@ def preprocess_growth(df: pd.DataFrame):
 # API endpoints
 # -----------------------
 @app.post("/predict/funding")
-def predict_funding(input: SMEInput):
+async def predict_funding(input: SMEInput):
     df = pd.DataFrame([input.dict()])
     df = preprocess_funding(df)
     prediction = funding_model.predict(df)[0]
-    return {"funding_prediction": prediction}
+    
+    result = {"funding_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
+    
+    # Send to n8n webhook
+    payload = {
+        "model": "funding",
+        "inputs": input.dict(),
+        "prediction": result["funding_prediction"]
+    }
+    asyncio.create_task(send_to_n8n(payload))
+    
+    return result
 
 @app.post("/predict/compliance")
-def predict_compliance(input: SMEInput):
+async def predict_compliance(input: SMEInput):
     df = pd.DataFrame([input.dict()])
     df = preprocess_compliance(df)
     prediction = compliance_model.predict(df)[0]
-    return {"compliance_prediction": prediction}
+
+    result = {"compliance_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
+    
+    # Send to n8n webhook
+    payload = {
+        "model": "compliance",
+        "inputs": input.dict(),
+        "prediction": result["compliance_prediction"]
+    }
+    asyncio.create_task(send_to_n8n(payload))
+    
+    return result
 
 @app.post("/predict/growth")
-
-def predict_growth(input: SMEInput):
+async def predict_growth(input: SMEInput):
     df = pd.DataFrame([input.dict()])
-
-    # Feature engineering (same as before)
     df = preprocess_growth(df)
+    prediction = growth_model.predict(df)[0]
 
-    # Load model components
-    model_data = joblib.load(GROWTH_MODEL_PATH)
-    model = model_data["model"]
-    encoder = model_data["encoder"]
-    scaler = model_data["scaler"]
-
-    # Split columns like in training
-    categorical_cols = encoder.feature_names_in_.tolist()
-    numeric_cols = scaler.feature_names_in_.tolist()
-
-    # Encode and scale
-    X_cat = encoder.transform(df[categorical_cols])
-    X_num = scaler.transform(df[numeric_cols])
-    X_processed = np.hstack([X_cat, X_num])
-
-    # Predict
-    prediction = model.predict(X_processed)[0]
-    return {"growth_prediction": float(prediction)}
+    result = {"growth_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
+    
+    # Send to n8n webhook
+    payload = {
+        "model": "growth",
+        "inputs": input.dict(),
+        "prediction": result["growth_prediction"]
+    }
+    asyncio.create_task(send_to_n8n(payload))
+    
+    return result
 
 # -----------------------
 # Run the server
