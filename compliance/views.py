@@ -22,6 +22,48 @@ class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
 
+    @action(detail=True, methods=['post'], url_path='validate')
+    def validate_document(self, request, pk=None):
+        try:
+            document = self.get_object()
+            
+            # ✅ Run Gemini validation logic here
+            model = genai.GenerativeModel("gemini-2.5-flash")
+
+            file_path = document.file.path
+            image = Image.open(file_path)
+
+            prompt = (
+                f"Analyze this {document.get_document_type_display()} "
+                "and determine if it appears valid or authentic. "
+                "Explain your reasoning and identify potential issues."
+            )
+
+            response = model.generate_content([prompt, image])
+            ai_text = response.text or "No response from Gemini AI."
+
+            valid = "valid" in ai_text.lower() and "invalid" not in ai_text.lower()
+            confidence = 0.9 if valid else 0.6
+
+            result, _ = ValidationResult.objects.update_or_create(
+                document=document,
+                defaults={
+                    "valid": valid,
+                    "reason": ai_text,
+                    "confidence": confidence,
+                    "recommendations": {"ai_feedback": ai_text},
+                },
+            )
+
+            return Response(
+                {"validation_result": ValidationResultSerializer(result).data},
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
     def create(self, request, *args, **kwargs):
         """
         Upload document -> save -> analyze with Gemini -> return validation result.
@@ -32,7 +74,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         try:
             # Prepare Gemini model
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash")
 
             # Load the uploaded file (image/pdf)
             file_path = document.file.path
@@ -61,10 +103,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     "recommendations": {"ai_feedback": ai_text},
                 },
             )
+            doc_data = DocumentSerializer(document).data
 
             return Response(
                 {
-                    "document": DocumentSerializer(document).data,
+                    "id": document.id, 
+                    "document": doc_data,
                     "validation_result": ValidationResultSerializer(result).data,
                 },
                 status=status.HTTP_201_CREATED,
@@ -74,6 +118,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             # Even if AI fails, return document info
             return Response(
                 {
+                    "id": document.id, 
                     "document": DocumentSerializer(document).data,
                     "error": str(e),
                 },
@@ -93,7 +138,7 @@ class GeminiViewSet(viewsets.ViewSet):
             image_file = serializer.validated_data.get("image")
 
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
 
                 # Prepare inputs (text + optional image)
                 inputs = [prompt]
@@ -131,7 +176,7 @@ class GeminiValidationViewSet(viewsets.ViewSet):
 
             try:
                 document = Document.objects.get(id=document_id)
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
 
                 image = Image.open(document.file)
                 inputs = [prompt, image]
