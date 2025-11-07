@@ -4,97 +4,86 @@ import numpy as np
 import joblib
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-import lightgbm as lgb
+from xgboost import XGBRegressor
 from loguru import logger
 import typer
 import warnings
+
 from inua360_the_kenyan_sme_ai_agent.config import MODELS_DIR, METRICS_DIR, PROCESSED_DATA_DIR
 
-warnings.filterwarnings("ignore")
 app = typer.Typer()
+warnings.filterwarnings("ignore")
 
 @app.command()
 def main(
-    input_path: Path = PROCESSED_DATA_DIR / "training.csv",
     growth_model_path: Path = MODELS_DIR / "growth_model.pkl",
-    features_path: Path = MODELS_DIR / "growth_features.pkl",
-    metrics_path: Path = METRICS_DIR / "growth_model_metrics.json",
-    test_size: float = 0.2,
-    random_state: int = 42
+    growth_features_path: Path = MODELS_DIR / "growth_features.pkl",
+    growth_metrics_path: Path = METRICS_DIR / "growth_model_metrics.json",
+    input_path: Path = PROCESSED_DATA_DIR / "training.csv"
 ):
-    """Train LightGBM to predict revenue_growth_rate."""
+    logger.info("Loading dataset...")
+    data = pd.read_csv(input_path)
+    data.columns = data.columns.str.strip().str.lower()
 
-    logger.info(f"Loading data from {input_path}...")
-    df = pd.read_csv(input_path)
-    df.columns = df.columns.str.strip().str.lower()
-    logger.success(f"Data loaded with shape {df.shape}")
+    # Drop missing target rows
+    data = data.dropna(subset=["revenue_growth_rate"])
+    X = data.drop(columns=["revenue_growth_rate"])
+    y = data["revenue_growth_rate"]
 
-    df = df.dropna(subset=["revenue_growth_rate"])
+    # One-hot encode categorical features
+    X = pd.get_dummies(X, drop_first=True)
 
-    X = df.drop(columns=["revenue_growth_rate"])
-    y = df["revenue_growth_rate"]
+    # Standardize numeric columns
+    numeric_cols = X.select_dtypes(include=np.number).columns
+    scaler = StandardScaler()
+    X[numeric_cols] = scaler.fit_transform(X[numeric_cols])
 
-    categorical_cols = X.select_dtypes(include=["object"]).columns.tolist()
-    numeric_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+    # Save feature list for use during prediction
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(X.columns.tolist(), growth_features_path)
+    logger.success(f"Growth feature list saved to {growth_features_path}")
 
-    logger.info(f"Categorical columns: {categorical_cols}")
-    logger.info(f"Numeric columns: {numeric_cols}")
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-            ("num", StandardScaler(), numeric_cols)
-        ]
-    )
-
+    # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
+        X, y, test_size=0.2, random_state=42
     )
 
-    model = lgb.LGBMRegressor(
+    # Define model
+    model = XGBRegressor(
         n_estimators=500,
-        learning_rate=0.01,
-        max_depth=12,
-        num_leaves=31,
-        min_child_samples=20,
+        learning_rate=0.05,
+        max_depth=8,
+        subsample=0.8,
+        colsample_bytree=0.8,
         reg_alpha=0.1,
         reg_lambda=0.1,
-        random_state=random_state
+        random_state=42
     )
 
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", model)
-    ])
+    logger.info("Training XGBoost Regressor...")
+    model.fit(X_train, y_train)
 
-    logger.info("Training LightGBM model...")
-    pipeline.fit(X_train, y_train)
-
-    # Save feature names after preprocessing for prediction
-    processed_features = pipeline.named_steps["preprocessor"].get_feature_names_out()
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(processed_features.tolist(), features_path)
-    logger.success(f"Growth feature list saved to {features_path}")
-
-    y_pred = pipeline.predict(X_test)
+    # Evaluate
+    y_pred = model.predict(X_test)
     r2 = r2_score(y_test, y_pred)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     mae = mean_absolute_error(y_test, y_pred)
 
     metrics = {"R2": round(r2, 4), "RMSE": round(rmse, 4), "MAE": round(mae, 4)}
-    logger.success(f"Training completed. Metrics: {metrics}")
 
-    joblib.dump(pipeline, growth_model_path)
-    logger.success(f"Model saved to {growth_model_path}")
+    logger.success(f"Model training complete with metrics: {metrics}")
 
+    # Save model
+    joblib.dump(model, growth_model_path)
+    logger.success(f"Growth model saved to {growth_model_path}")
+
+    # Save metrics
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(metrics_path, "w") as f:
+    with open(growth_metrics_path, "w") as f:
         json.dump(metrics, f, indent=4)
-    logger.success(f"Metrics saved to {metrics_path}")
+    logger.success(f"Metrics saved to {growth_metrics_path}")
 
 if __name__ == "__main__":
     app()

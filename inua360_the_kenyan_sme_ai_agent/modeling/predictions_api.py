@@ -6,6 +6,43 @@ import joblib
 from pathlib import Path
 import httpx
 import asyncio
+import os 
+from loguru import logger
+from openai import OpenAI
+import dotenv
+
+dotenv.load_dotenv()
+llm = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+async def llm_advice(system_prompt: str, user_prompt: str):
+    try:
+        response = llm.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        content = response.choices[0].message.content
+        return content
+    except Exception as e:
+        logger.error(f"LLM advice generation failed: {e}")
+        return "Error generating advice."
+
+# -----------------------
+# JSON Serialization Fix
+# -----------------------
+def make_json_serializable(obj):
+    if isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(v) for v in obj]
+    else:
+        return obj
 
 # -----------------------
 # Paths
@@ -34,22 +71,33 @@ growth_features = joblib.load(GROWTH_FEATURES_PATH)
 # -----------------------
 # FastAPI app
 # -----------------------
-app = FastAPI(title="SME AI Prediction API")
+app = FastAPI(
+    title="Inua360 SME AI Agent",
+    description="Public API for SME funding and compliance predictions.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
 
 # -----------------------
 # n8n webhook integration
 # -----------------------
-N8N_WEBHOOK_URL = "https://abby218.app.n8n.cloud/webhook/f71a7d4c-dff3-42e7-b081-a02fad74b56d"
+N8N_WEBHOOK_URL = "https://abby218.app.n8n.cloud/webhook-test/sme-data"
 
 async def send_to_n8n(payload: dict):
+    """Send payload to n8n webhook with graceful error handling."""
+    payload = make_json_serializable(payload)
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(N8N_WEBHOOK_URL, json=payload)
+            response = await client.post(N8N_WEBHOOK_URL, json=payload, timeout=10)
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            print(f"Error sending to n8n: {e}")
-            return None
+        except httpx.HTTPStatusError as e:
+            print(f"n8n returned HTTP error {e.response.status_code}: {e.response.text}")
+        except httpx.RequestError as e:
+            print(f"Error connecting to n8n: {e}")
+        return None
 
 # -----------------------
 # Input schema
@@ -88,7 +136,6 @@ class SMEInput(BaseModel):
 # Preprocessing functions
 # -----------------------
 def base_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
-    """Shared feature engineering for all endpoints."""
     bool_cols = [
         "AML_risk_flag", "has_pitch_deck", "registered_business",
         "female_owned", "employee_contracts_verified"
@@ -123,77 +170,84 @@ def base_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
     df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
     return df
 
-def preprocess_funding(df: pd.DataFrame) -> pd.DataFrame:
-    df = base_preprocessing(df)
-    df = df.reindex(columns=funding_features, fill_value=0)
-    return df
-
-def preprocess_compliance(df: pd.DataFrame) -> pd.DataFrame:
-    df = base_preprocessing(df)
-    df = df.reindex(columns=compliance_features, fill_value=0)
-    return df
-
-def preprocess_growth(df: pd.DataFrame) -> pd.DataFrame:
-    df = base_preprocessing(df)
-    df = df.reindex(columns=growth_features, fill_value=0)
-    return df
+def preprocess_funding(df): return base_preprocessing(df).reindex(columns=funding_features, fill_value=0)
+def preprocess_compliance(df): return base_preprocessing(df).reindex(columns=compliance_features, fill_value=0)
+def preprocess_growth(df): return base_preprocessing(df).reindex(columns=growth_features, fill_value=0)
 
 # -----------------------
 # API endpoints
 # -----------------------
 @app.post("/predict/funding")
 async def predict_funding(input: SMEInput):
-    df = pd.DataFrame([input.dict()])
-    df = preprocess_funding(df)
-    prediction = funding_model.predict(df)[0]
-    
-    result = {"funding_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
-    
-    # Send to n8n webhook
-    payload = {
-        "model": "funding",
-        "inputs": input.dict(),
-        "prediction": result["funding_prediction"]
-    }
-    asyncio.create_task(send_to_n8n(payload))
-    
-    return result
+    df = preprocess_funding(pd.DataFrame([input.model_dump()]))
+    prediction = make_json_serializable(funding_model.predict(df)[0])
+
+    advice = await llm_advice(
+        "You are a senior SME funding advisor.",
+        f"SME input: {input.model_dump()}\nFunding Prediction: {prediction}"
+    )
+
+    result = {"funding_prediction": prediction, "funding_advice": advice}
+    asyncio.create_task(send_to_n8n({"model": "funding", "inputs": input.dict(), "prediction": prediction}))
+    return make_json_serializable(result)
 
 @app.post("/predict/compliance")
 async def predict_compliance(input: SMEInput):
-    df = pd.DataFrame([input.dict()])
-    df = preprocess_compliance(df)
-    prediction = compliance_model.predict(df)[0]
+    df = preprocess_compliance(pd.DataFrame([input.dict()]))
+    prediction = make_json_serializable(compliance_model.predict(df)[0])
 
-    result = {"compliance_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
-    
-    # Send to n8n webhook
-    payload = {
-        "model": "compliance",
-        "inputs": input.dict(),
-        "prediction": result["compliance_prediction"]
-    }
-    asyncio.create_task(send_to_n8n(payload))
-    
-    return result
+    advice = await llm_advice(
+        "You are a compliance expert for SMEs.",
+        f"SME input: {input.dict()}\nCompliance Prediction: {prediction}"
+    )
+
+    result = {"compliance_prediction": prediction, "compliance_advice": advice}
+    asyncio.create_task(send_to_n8n({"model": "compliance", "inputs": input.dict(), "prediction": prediction}))
+    return make_json_serializable(result)
 
 @app.post("/predict/growth")
 async def predict_growth(input: SMEInput):
-    df = pd.DataFrame([input.dict()])
-    df = preprocess_growth(df)
-    prediction = growth_model.predict(df)[0]
+    df = preprocess_growth(pd.DataFrame([input.dict()]))
+    prediction = make_json_serializable(growth_model.predict(df)[0])
 
-    result = {"growth_prediction": float(prediction) if isinstance(prediction, (int, float, np.floating)) else str(prediction)}
-    
-    # Send to n8n webhook
-    payload = {
-        "model": "growth",
+    advice = await llm_advice(
+        "You are a growth strategist for SMEs.",
+        f"SME input: {input.dict()}\nGrowth Prediction: {prediction}"
+    )
+
+    result = {"growth_prediction": prediction, "growth_advice": advice}
+    asyncio.create_task(send_to_n8n({"model": "growth", "inputs": input.dict(), "prediction": prediction}))
+    return make_json_serializable(result)
+
+@app.post("/predict/sme")
+async def predict_sme(input: SMEInput):
+    df = pd.DataFrame([input.dict()])
+
+    funding_pred = make_json_serializable(funding_model.predict(preprocess_funding(df))[0])
+    compliance_pred = make_json_serializable(compliance_model.predict(preprocess_compliance(df))[0])
+    growth_pred = make_json_serializable(growth_model.predict(preprocess_growth(df))[0])
+
+    predictions = {"funding": funding_pred, "compliance": compliance_pred, "growth": growth_pred}
+
+    overall_advice = await llm_advice(
+        "You are an expert SME advisor.",
+        f"SME input: {input.dict()}\nPredictions: {predictions}"
+    )
+
+    # Send to n8n in a background thread, do not await it
+    asyncio.create_task(send_to_n8n(make_json_serializable({
+        "model": "combined_sme",
         "inputs": input.dict(),
-        "prediction": result["growth_prediction"]
-    }
-    asyncio.create_task(send_to_n8n(payload))
-    
-    return result
+        "predictions": predictions,
+        "overall_advice": overall_advice
+    })))
+
+    # Return immediately to the client
+    return make_json_serializable({
+        "predictions": predictions,
+        "overall_advice": overall_advice
+    })
+
 
 # -----------------------
 # Run the server
