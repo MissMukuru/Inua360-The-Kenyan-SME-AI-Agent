@@ -83,7 +83,7 @@ app = FastAPI(
 # -----------------------
 # n8n webhook integration
 # -----------------------
-N8N_WEBHOOK_URL = "https://abby218.app.n8n.cloud/webhook-test/sme-data"
+N8N_WEBHOOK_URL = "https://abby218.app.n8n.cloud/webhook/sme-data"
 
 async def send_to_n8n(payload: dict):
     """Send payload to n8n webhook with graceful error handling."""
