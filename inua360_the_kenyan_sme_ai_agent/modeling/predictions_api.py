@@ -229,11 +229,35 @@ async def predict_sme(input: SMEInput):
 
     predictions = {"funding": funding_pred, "compliance": compliance_pred, "growth": growth_pred}
 
-    overall_advice = await llm_advice(
-        "You are an expert SME advisor.",
-        f"SME input: {input.dict()}\nPredictions: {predictions}"
-    )
+    system_prompt = """
+    You are the Inua360 AI SME Advisor.
 
+    - A short executive summary
+    - A unique, creative “Inua360 Insight” 
+    - Funding outlook (using the model predictions)
+    - Compliance interpretation
+    - Growth projection
+    - Risk radar: identify top 3 risks and mitigation strategies
+    - Innovator pitch: a short persuasive pitch for this SME
+    - Strategic roadmap: 3 actionable steps for next 6 months
+    - A 14-day action plan
+    - A Kenya SME opportunity angle
+    
+    Use clean Markdown: **bold**, bullet points, short paragraphs.
+Do NOT use hashes (#), slashes (/), HTML tags, or weird symbols.
+Keep it readable for a modern frontend UI.
+"""
+    user_prompt = f"""
+    SME Input: {input.dict()}
+    Model Predictions:
+      - Funding: {funding_pred}
+      - Compliance: {compliance_pred}
+      - Growth: {growth_pred}
+
+    Generate a single combined business advisory report.
+    """
+
+    overall_advice = await llm_advice(system_prompt, user_prompt)
     # Send to n8n in a background thread, do not await it
     asyncio.create_task(send_to_n8n(make_json_serializable({
         "model": "combined_sme",
