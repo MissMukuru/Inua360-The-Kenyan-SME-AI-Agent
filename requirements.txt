@@ -24,3 +24,5 @@ fastapi
 lightgbm
 uvicorn
 openai
+requests
+httpx
